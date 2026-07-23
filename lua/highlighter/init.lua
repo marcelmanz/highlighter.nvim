@@ -89,32 +89,57 @@ local function save_buffer_marks(bufnr)
 end
 
 local function toggle_highlight(bufnr, start_row, start_col, end_row, end_col)
+	-- details = true so we know exactly where existing marks end
 	local existing_marks = vim.api.nvim_buf_get_extmarks(
 		bufnr,
 		namespace_unique_id,
 		{ start_row, start_col },
 		{ end_row, end_col },
-		{ overlap = true }
+		{ overlap = true, details = true }
 	)
 
 	if #existing_marks > 0 then
-		-- toggle off: remove existing overlapping marks
+		-- Subtract Mode (Eraser): carve out the toggled region from each overlapping mark
 		for _, mark in ipairs(existing_marks) do
-			vim.api.nvim_buf_del_extmark(bufnr, namespace_unique_id, mark[1])
+			local m_id = mark[1]
+			local m_s_row = mark[2]
+			local m_s_col = mark[3]
+			local details = mark[4]
+
+			-- Wrapped in 'if details then' to prevent EmmyLua nil warnings
+			if details then
+				local m_e_row = details.end_row
+				local m_e_col = details.end_col
+
+				-- 1. Delete the original large mark
+				vim.api.nvim_buf_del_extmark(bufnr, namespace_unique_id, m_id)
+
+				-- 2. Leftover mark BEFORE the erased section
+				if m_s_row < start_row or (m_s_row == start_row and m_s_col < start_col) then
+					vim.api.nvim_buf_set_extmark(bufnr, namespace_unique_id, m_s_row, m_s_col, {
+						end_row = start_row,
+						end_col = start_col,
+						hl_group = "CustomYellowHighlight",
+					})
+				end
+
+				-- 3. Leftover mark AFTER the erased section
+				if m_e_row > end_row or (m_e_row == end_row and m_e_col > end_col) then
+					vim.api.nvim_buf_set_extmark(bufnr, namespace_unique_id, end_row, end_col, {
+						end_row = m_e_row,
+						end_col = m_e_col,
+						hl_group = "CustomYellowHighlight",
+					})
+				end
+			end
 		end
 	else
-		-- toggle on: create the new mark
-		vim.api.nvim_buf_set_extmark(
-			bufnr,
-			namespace_unique_id,
-			start_row,
-			start_col,
-			{
-				end_row = end_row,
-				end_col = end_col,
-				hl_group = "CustomYellowHighlight",
-			}
-		)
+		-- Add Mode
+		vim.api.nvim_buf_set_extmark(bufnr, namespace_unique_id, start_row, start_col, {
+			end_row = end_row,
+			end_col = end_col,
+			hl_group = "CustomYellowHighlight",
+		})
 	end
 
 	save_buffer_marks(bufnr)
