@@ -1,14 +1,14 @@
 local M = {}
 
-local namespace_unique_id = vim.api.nvim_create_namespace("YellowHighlighter")
-local db_path = vim.fn.stdpath("data") .. "/highlighter_marks.json"
+local namespace_unique_id = vim.api.nvim_create_namespace "YellowHighlighter"
+local db_path = vim.fn.stdpath "data" .. "/highlighter_marks.json"
 
 local function load_db()
 	local f = io.open(db_path, "r")
 	if not f then
 		return {}
 	end
-	local content = f:read("*a")
+	local content = f:read "*a"
 	f:close()
 	if content == "" then
 		return {}
@@ -36,11 +36,18 @@ local function load_buffer_marks(bufnr)
 
 	vim.api.nvim_buf_clear_namespace(bufnr, namespace_unique_id, 0, -1)
 	for _, pos in ipairs(marks) do
-		pcall(vim.api.nvim_buf_set_extmark, bufnr, namespace_unique_id, pos[1], pos[2], {
-			end_row = pos[3],
-			end_col = pos[4],
-			hl_group = "CustomYellowHighlight",
-		})
+		pcall(
+			vim.api.nvim_buf_set_extmark,
+			bufnr,
+			namespace_unique_id,
+			pos[1],
+			pos[2],
+			{
+				end_row = pos[3],
+				end_col = pos[4],
+				hl_group = "CustomYellowHighlight",
+			}
+		)
 	end
 end
 
@@ -53,7 +60,13 @@ local function save_buffer_marks(bufnr)
 	local db = load_db()
 
 	-- get all marks in this buffer
-	local marks = vim.api.nvim_buf_get_extmarks(bufnr, namespace_unique_id, 0, -1, { details = true })
+	local marks = vim.api.nvim_buf_get_extmarks(
+		bufnr,
+		namespace_unique_id,
+		0,
+		-1,
+		{ details = true }
+	)
 
 	if #marks == 0 then
 		db[filepath] = nil
@@ -176,42 +189,79 @@ local function toggle_highlight(bufnr, start_row, start_col, end_row, end_col)
 				vim.api.nvim_buf_del_extmark(bufnr, namespace_unique_id, m_id)
 
 				-- 2. leftover mark before the erased section (trimmed: no dangling edge ws)
-				if m_s_row < start_row or (m_s_row == start_row and m_s_col < start_col) then
-					local tsr, tsc, ter, tec = trim_whitespace(bufnr, m_s_row, m_s_col, start_row, start_col)
+				if
+					m_s_row < start_row
+					or (m_s_row == start_row and m_s_col < start_col)
+				then
+					local tsr, tsc, ter, tec = trim_whitespace(
+						bufnr,
+						m_s_row,
+						m_s_col,
+						start_row,
+						start_col
+					)
 					if tsr then
-						vim.api.nvim_buf_set_extmark(bufnr, namespace_unique_id, tsr, tsc, {
-							end_row = ter,
-							end_col = tec,
-							hl_group = "CustomYellowHighlight",
-						})
+						vim.api.nvim_buf_set_extmark(
+							bufnr,
+							namespace_unique_id,
+							tsr,
+							tsc,
+							{
+								end_row = ter,
+								end_col = tec,
+								hl_group = "CustomYellowHighlight",
+							}
+						)
 					end
 				end
 
 				-- 3. leftover mark after the erased section (trimmed: no dangling edge ws)
-				if m_e_row > end_row or (m_e_row == end_row and m_e_col > end_col) then
-					local tsr, tsc, ter, tec = trim_whitespace(bufnr, end_row, end_col, m_e_row, m_e_col)
+				if
+					m_e_row > end_row
+					or (m_e_row == end_row and m_e_col > end_col)
+				then
+					local tsr, tsc, ter, tec = trim_whitespace(
+						bufnr,
+						end_row,
+						end_col,
+						m_e_row,
+						m_e_col
+					)
 					if tsr then
-						vim.api.nvim_buf_set_extmark(bufnr, namespace_unique_id, tsr, tsc, {
-							end_row = ter,
-							end_col = tec,
-							hl_group = "CustomYellowHighlight",
-						})
+						vim.api.nvim_buf_set_extmark(
+							bufnr,
+							namespace_unique_id,
+							tsr,
+							tsc,
+							{
+								end_row = ter,
+								end_col = tec,
+								hl_group = "CustomYellowHighlight",
+							}
+						)
 					end
 				end
 			end
 		end
 	else
 		-- add mode: shrink-wrap to drop leading/trailing whitespace.
-		local tsr, tsc, ter, tec = trim_whitespace(bufnr, start_row, start_col, end_row, end_col)
+		local tsr, tsc, ter, tec =
+			trim_whitespace(bufnr, start_row, start_col, end_row, end_col)
 		if not tsr then
 			return -- selection was entirely whitespace; nothing to highlight
 		end
 		start_row, start_col, end_row, end_col = tsr, tsc, ter, tec
-		vim.api.nvim_buf_set_extmark(bufnr, namespace_unique_id, start_row, start_col, {
-			end_row = end_row,
-			end_col = end_col,
-			hl_group = "CustomYellowHighlight",
-		})
+		vim.api.nvim_buf_set_extmark(
+			bufnr,
+			namespace_unique_id,
+			start_row,
+			start_col,
+			{
+				end_row = end_row,
+				end_col = end_col,
+				hl_group = "CustomYellowHighlight",
+			}
+		)
 	end
 
 	save_buffer_marks(bufnr)
@@ -240,9 +290,14 @@ _G.__yellow_highlighter_op = function(motion_type)
 end
 
 function M.setup()
-	vim.api.nvim_set_hl(0, "CustomYellowHighlight", { bg = "#FDE047", fg = "#000000", bold = true })
+	vim.api.nvim_set_hl(
+		0,
+		"CustomYellowHighlight",
+		{ bg = "#FDE047", fg = "#000000", bold = true }
+	)
 
-	local augroup = vim.api.nvim_create_augroup("YellowHighlighterAuto", { clear = true })
+	local augroup =
+		vim.api.nvim_create_augroup("YellowHighlighterAuto", { clear = true })
 
 	vim.api.nvim_create_autocmd({ "BufReadPost" }, {
 		group = augroup,
@@ -277,7 +332,8 @@ function M.setup()
 			local end_row = end_pos[1] - 1
 			local end_col = end_pos[2] + 1
 
-			local lines = vim.api.nvim_buf_get_lines(bufnr, end_row, end_row + 1, false)
+			local lines =
+				vim.api.nvim_buf_get_lines(bufnr, end_row, end_row + 1, false)
 			local line_len = lines[1] and string.len(lines[1]) or 0
 			end_col = math.min(end_col, line_len)
 
