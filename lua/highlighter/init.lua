@@ -75,6 +75,82 @@ local function save_buffer_marks(bufnr)
 	save_db(db)
 end
 
+local function trim_whitespace(bufnr, sr, sc, er, ec)
+	local cur_row, cur_line = -1, nil
+	local function line_of(row)
+		if row ~= cur_row then
+			cur_row = row
+			cur_line = vim.api.nvim_buf_get_lines(bufnr, row, row + 1, false)[1]
+		end
+		return cur_line
+	end
+	local function byte_at(row, col)
+		local line = line_of(row)
+		if not line or col < 0 or col >= #line then
+			return nil
+		end
+		return line:sub(col + 1, col + 1)
+	end
+	local function len_of(row)
+		local line = line_of(row)
+		return line and #line or 0
+	end
+
+	-- clamp exclusive end to the actual line length so an oversized or stale ec
+	local er_len = len_of(er)
+	if ec > er_len then
+		ec = er_len
+	end
+
+	local lr, lc
+	if ec > 0 then
+		lr, lc = er, ec - 1
+	else
+		lr = er - 1
+		lc = len_of(lr) - 1
+	end
+
+	-- empty or inverted region.
+	if lr < sr or (lr == sr and lc < sc) then
+		return nil
+	end
+
+	-- advance start past leading whitespace.
+	while true do
+		if sr > lr or (sr == lr and sc > lc) then
+			return nil
+		end
+		local b = byte_at(sr, sc)
+		if b == nil then -- past end of line: next line, col 0
+			sr = sr + 1
+			sc = 0
+		elseif b == " " or b == "\t" then
+			sc = sc + 1
+		else
+			break
+		end
+	end
+
+	-- retreat end past trailing whitespace (operate on inclusive lr, lc).
+	while true do
+		if lr < sr or (lr == sr and lc < sc) then
+			return nil
+		end
+		local b = byte_at(lr, lc)
+		if b == nil then -- before start of line / empty line: prev line end
+			lr = lr - 1
+			lc = len_of(lr) - 1
+		elseif b == " " or b == "\t" then
+			lc = lc - 1
+		else
+			break
+		end
+	end
+
+	-- inclusive last char (lr, lc) -> exclusive end (lr, lc + 1).
+	return sr, sc, lr, lc + 1
+end
+
 local function toggle_highlight(bufnr, start_row, start_col, end_row, end_col)
 	-- details = true so we know exactly where existing marks end
 	local existing_marks = vim.api.nvim_buf_get_extmarks(
@@ -86,42 +162,51 @@ local function toggle_highlight(bufnr, start_row, start_col, end_row, end_col)
 	)
 
 	if #existing_marks > 0 then
-		-- Subtract Mode (Eraser): carve out the toggled region from each overlapping mark
+		-- subtract mode (eraser): carve out the toggled region from each overlapping mark
 		for _, mark in ipairs(existing_marks) do
 			local m_id = mark[1]
 			local m_s_row = mark[2]
 			local m_s_col = mark[3]
 			local details = mark[4]
 
-			-- Wrapped in 'if details then' to prevent EmmyLua nil warnings
 			if details then
 				local m_e_row = details.end_row
 				local m_e_col = details.end_col
 
-				-- 1. Delete the original large mark
 				vim.api.nvim_buf_del_extmark(bufnr, namespace_unique_id, m_id)
 
-				-- 2. Leftover mark BEFORE the erased section
+				-- 2. leftover mark before the erased section (trimmed: no dangling edge ws)
 				if m_s_row < start_row or (m_s_row == start_row and m_s_col < start_col) then
-					vim.api.nvim_buf_set_extmark(bufnr, namespace_unique_id, m_s_row, m_s_col, {
-						end_row = start_row,
-						end_col = start_col,
-						hl_group = "CustomYellowHighlight",
-					})
+					local tsr, tsc, ter, tec = trim_whitespace(bufnr, m_s_row, m_s_col, start_row, start_col)
+					if tsr then
+						vim.api.nvim_buf_set_extmark(bufnr, namespace_unique_id, tsr, tsc, {
+							end_row = ter,
+							end_col = tec,
+							hl_group = "CustomYellowHighlight",
+						})
+					end
 				end
 
-				-- 3. Leftover mark AFTER the erased section
+				-- 3. leftover mark after the erased section (trimmed: no dangling edge ws)
 				if m_e_row > end_row or (m_e_row == end_row and m_e_col > end_col) then
-					vim.api.nvim_buf_set_extmark(bufnr, namespace_unique_id, end_row, end_col, {
-						end_row = m_e_row,
-						end_col = m_e_col,
-						hl_group = "CustomYellowHighlight",
-					})
+					local tsr, tsc, ter, tec = trim_whitespace(bufnr, end_row, end_col, m_e_row, m_e_col)
+					if tsr then
+						vim.api.nvim_buf_set_extmark(bufnr, namespace_unique_id, tsr, tsc, {
+							end_row = ter,
+							end_col = tec,
+							hl_group = "CustomYellowHighlight",
+						})
+					end
 				end
 			end
 		end
 	else
-		-- Add Mode
+		-- add mode: shrink-wrap to drop leading/trailing whitespace.
+		local tsr, tsc, ter, tec = trim_whitespace(bufnr, start_row, start_col, end_row, end_col)
+		if not tsr then
+			return -- selection was entirely whitespace; nothing to highlight
+		end
+		start_row, start_col, end_row, end_col = tsr, tsc, ter, tec
 		vim.api.nvim_buf_set_extmark(bufnr, namespace_unique_id, start_row, start_col, {
 			end_row = end_row,
 			end_col = end_col,
@@ -207,5 +292,7 @@ function M.setup()
 		vim.notify("Highlights cleared", vim.log.levels.INFO)
 	end, { desc = "Clear all yellow highlights" })
 end
+
+M._trim_whitespace = trim_whitespace
 
 return M
