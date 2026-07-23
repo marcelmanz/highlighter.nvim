@@ -6,7 +6,7 @@
 
 - Smart whitespace trimming: highlights shrink wrap to drop leading indentation,
   trailing whitespace, and blank lines at selection edges.
-- Headless self-checks: `test/trim_spec.lua`, `test/trim_edge_spec.lua`.
+- Headless self-check: `test/trim_spec.lua`.
 
 ### Fixed
 
