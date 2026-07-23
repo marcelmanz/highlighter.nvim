@@ -56,5 +56,5 @@ if fails > 0 then
 	print(("FAIL: %d test(s)"):format(fails))
 	vim.cmd("cq 1")
 else
-	print("PASS: all trim tests")
+	print("PASS: all trim tests\n")
 end
